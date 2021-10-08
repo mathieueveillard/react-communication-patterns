@@ -1,46 +1,155 @@
-# Getting Started with Create React App
+# React pub sub
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+## Why
 
-## Available Scripts
+When trying to have React components communicate, one can use the following patterns:
 
-In the project directory, you can run:
+- Common ancestor communication: components communicate via callback props and props through their common ancestor. Quite systematic, but doesn't scale at all (brothers is OK, but cousins, hey!)
+- Single source of truth, with implementations such as [Redux](https://redux.js.org/) or [Mobx](https://mobx.js.org/README.html). Quite systematic as well, but a tedious setup, lots of decisions to make and a question: should this piece of data live in the global state? Often, the answer is "no".
 
-### `npm start`
+Hence one could wish a more direct, "peer to peer" and reactive communication, as in [Backbone's events](https://backbonejs.org/#Events) and [Angular's services](https://angular.io/tutorial/toh-pt4).
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+## The gist
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+Let's first define a `Channel` (observer pattern):
 
-### `npm test`
+```tsx
+export type Subscriber<T> = (t: T) => void;
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+export class Channel<T> {
+  private subscribers: Subscriber<T>[] = [];
 
-### `npm run build`
+  publish(t: T): void {
+    function invoke(subscriber: Subscriber<T>): void {
+      subscriber(t);
+    }
+    this.subscribers.forEach(invoke);
+  }
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+  subscribe(subscriber: Subscriber<T>): () => void {
+    const index = this.subscribers.length;
+    this.subscribers = [...this.subscribers, subscriber];
+    const ref = this;
+    return function (): void {
+      ref.subscribers.splice(index, 1);
+    };
+  }
+}
+```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+Then allow communication through many channels:
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+```tsx
+type Key = symbol | string | number;
 
-### `npm run eject`
+export class PubSub {
+  private channels: Record<Key, Channel<any>> = {};
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+  publish<T>(key: Key, message: T): void {
+    this.channels[key].publish(message);
+  }
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+  subscribe<T>(key: Key, subscriber: Subscriber<T>): void {
+    this.getChannel<T>(key).subscribe(subscriber);
+  }
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+  private getChannel<T>(key: Key): Channel<T> {
+    return this.channels[key] || this.createChannel(key);
+  }
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+  private createChannel<T>(key: Key): Channel<T> {
+    const channel = new Channel<T>();
+    this.channels = {
+      ...this.channels,
+      [key]: channel,
+    };
+    return channel;
+  }
+}
+```
 
-## Learn More
+Finally, provide facilies to use in React's components (context, hook and HOC):
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+```tsx
+export const pubsub = new PubSub();
+export const PubSubContext = React.createContext(pubsub);
+```
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+```tsx
+export function usePubSub() {
+  const pubsub = React.useContext(PubSubContext);
+  return {
+    pubsub,
+  };
+}
+```
+
+```tsx
+interface Props {
+  children: string | React.ReactElement | React.ReactElement[];
+}
+
+function WithPubSub({ children }: Props): React.ReactElement {
+  return (
+    <PubSubContext.Provider value={pubsub}>{children}</PubSubContext.Provider>
+  );
+}
+```
+
+## Usage
+
+Assuming 2 components `Alice` and `Bob` that need to communicate:
+
+```tsx
+function App(): React.ReactElement {
+  return (
+    <WithPubSub>
+      <Alice />
+      <Bob />
+    </WithPubSub>
+  );
+}
+```
+
+```tsx
+function Alice(): React.ReactElement {
+  const { pubsub } = usePubSub();
+
+  function sendMessage(): void {
+    pubsub.publish("AliceAndBobChannel", "Hello world!");
+  }
+
+  return (
+    <div>
+      <h1>Alice</h1>
+      <button onClick={sendMessage}>Say hello!</button>
+    </div>
+  );
+}
+```
+
+```tsx
+function Bob(): React.ReactElement {
+  const [message, setMessage] = React.useState("");
+
+  const { pubsub } = usePubSub();
+
+  React.useEffect(
+    function () {
+      pubsub.subscribe("AliceAndBobChannel", setMessage);
+    },
+    [pubsub]
+  );
+
+  return (
+    <div>
+      <h1>Bob</h1>
+      {message && <p>I got a message: "{message}"</p>}
+    </div>
+  );
+}
+```
+
+## Feedback?
+
+I would love to hear your feedback. Use cases? Improvements?
