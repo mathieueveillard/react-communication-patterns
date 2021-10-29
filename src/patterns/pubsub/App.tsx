@@ -1,18 +1,16 @@
-import WithPubSub from "lib/WithPubSub";
+import WithPubSub from "lib/pubsub/WithPubSub";
 import React from "react";
 import Alice from "./Alice";
 import Bob from "./Bob";
+import Separator from "utils/Separator";
 
 function App(): React.ReactElement {
   return (
     <WithPubSub>
       <div style={{ display: "flex" }}>
-        <div style={{ padding: "4rem" }}>
-          <Alice />
-        </div>
-        <div style={{ padding: "4rem" }}>
-          <Bob />
-        </div>
+        <Alice />
+        <Separator />
+        <Bob />
       </div>
     </WithPubSub>
   );

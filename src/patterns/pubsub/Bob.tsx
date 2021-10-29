@@ -1,5 +1,5 @@
 import React from "react";
-import { usePubSub } from "lib/usePubSub";
+import { usePubSub } from "lib/pubsub/usePubSub";
 
 function Bob(): React.ReactElement {
   const [message, setMessage] = React.useState("");
@@ -16,7 +16,7 @@ function Bob(): React.ReactElement {
   return (
     <div>
       <h1>Bob</h1>
-      {message && <p>I got a message: "{message}"</p>}
+      {message && <p>Message: "{message}"</p>}
     </div>
   );
 }
